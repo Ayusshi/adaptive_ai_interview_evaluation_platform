@@ -58,7 +58,18 @@ initial_state = {
 }
 
 
-result = interview_graph.invoke(initial_state)
+print("Starting interview...")
+
+config = {
+    "configurable": {
+        "thread_id": "candidate_001_interview_001"
+    }
+}
+
+result = interview_graph.invoke(
+    initial_state,
+    config=config,
+)
 
 print("\nFinal State:")
 print(result)

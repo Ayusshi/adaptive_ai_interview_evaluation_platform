@@ -111,7 +111,12 @@ def decide_next_step(
         current_difficulty=state["current_difficulty"],
     )
 
+    total_questions = state["interview_plan"]["total_questions"]
+
     state["next_difficulty"] = next_difficulty
+
+    if state["question_number"] >= total_questions:
+        state["interview_complete"] = True
 
     print(
         f"Evaluation score: {score}"
@@ -151,24 +156,20 @@ def ask_follow_up(
     state: InterviewState,
 ):
     """
-    Select a follow-up question for the same competency.
+    Ask another question on the current competency.
 
-    We first try the adaptive difficulty calculated by
-    AdaptiveEngine. If the question pool does not contain
-    an unused question at that difficulty, we fall back
-    to the current difficulty.
-
-    This is temporary behavior while the question bank
-    is still small.
+    Follow-up questions stay within the same competency,
+    while the adaptive engine determines the difficulty.
     """
 
     competency = state["current_competency"]
-    next_difficulty = state["next_difficulty"]
+    difficulty = state["next_difficulty"]
 
     try:
+
         selected_question = question_selector.select_question(
             competency=competency,
-            difficulty=next_difficulty,
+            difficulty=difficulty,
             questions_asked=state["questions_asked"],
         )
 
@@ -176,33 +177,19 @@ def ask_follow_up(
 
         print(
             f"No unused {competency} question found "
-            f"at {next_difficulty} difficulty."
+            f"at {difficulty} difficulty."
         )
 
         print(
-            "Falling back to current difficulty."
+            "Skipping follow-up and continuing "
+            "with the interview."
         )
 
-        try:
-            selected_question = question_selector.select_question(
-                competency=competency,
-                difficulty=state["current_difficulty"],
-                questions_asked=state["questions_asked"],
-            )
-
-        except ValueError:
-
-            print(
-                "No unused follow-up question available. "
-                "Continuing to next question."
-            )
-
-            return {
-                "question_number": (
-                    state["question_number"] + 1
-                ),
-                "interview_complete": False,
-            }
+        return {
+            "question_number": (
+                state["question_number"] + 1
+            ),
+        }
 
     return {
         "current_question": selected_question["question"],
@@ -225,8 +212,15 @@ def ask_next_question(
     state: InterviewState,
 ) -> InterviewState:
 
+    competency = get_competency_for_question(state)
+
+    if competency is None:
+        return {
+            "interview_complete": True,
+        }
+
     question = question_selector.select_question(
-        competency=state["current_competency"],
+        competency=competency,
         difficulty=state["next_difficulty"],
         questions_asked=state["questions_asked"],
     )
@@ -246,3 +240,22 @@ def ask_next_question(
             state["question_number"] + 1
         ),
     }
+
+def get_competency_for_question(
+    state: InterviewState,
+) -> str | None:
+
+    question_number = state["question_number"]
+
+    competencies = state["interview_plan"]["competencies"]
+
+    questions_so_far = 0
+
+    for competency in competencies:
+
+        questions_so_far += competency["question_count"]
+
+        if question_number <= questions_so_far:
+            return competency["name"]
+
+    return None

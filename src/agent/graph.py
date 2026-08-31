@@ -1,4 +1,7 @@
+import sqlite3
+
 from langgraph.graph import END, START, StateGraph
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from src.agent.state import InterviewState
 
@@ -103,7 +106,7 @@ builder.add_conditional_edges(
 
 
 # --------------------------------------------------
-# Endpoints
+# Continue interview loop
 # --------------------------------------------------
 
 builder.add_edge(
@@ -116,8 +119,25 @@ builder.add_edge(
     "receive_answer",
 )
 
+
 # --------------------------------------------------
-# Compile
+# SQLite Checkpointing
 # --------------------------------------------------
 
-interview_graph = builder.compile()
+connection = sqlite3.connect(
+    "interview_state.db",
+    check_same_thread=False,
+)
+
+checkpointer = SqliteSaver(
+    connection
+)
+
+
+# --------------------------------------------------
+# Compile graph
+# --------------------------------------------------
+
+interview_graph = builder.compile(
+    checkpointer=checkpointer
+)
