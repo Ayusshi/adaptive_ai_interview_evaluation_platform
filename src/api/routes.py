@@ -1,196 +1,194 @@
 from fastapi import APIRouter, HTTPException
 
-from src.agent.graph import interview_graph
-from src.api.schemas import (
+from src.models.interview import (
     StartInterviewRequest,
-    StartInterviewResponse,
     SubmitAnswerRequest,
-    SubmitAnswerResponse,
-    FinalReportResponse,
 )
+from src.services.interview_service import InterviewService
 from src.services.report_service import ReportService
 
 
 router = APIRouter()
 
+interview_service = InterviewService()
 report_service = ReportService()
 
 
-def build_thread_id(candidate_id: str) -> str:
-    return f"{candidate_id}_interview"
+# Temporary interview plan.
+# Later this will come from the Job Analysis
+# + Interview Planner pipeline.
+DEFAULT_INTERVIEW_PLAN = {
+    "total_questions": 6,
+
+    "competencies": [
+        {
+            "name": "Python",
+            "importance": 0.25,
+            "question_count": 2,
+            "difficulty": ["easy", "medium"],
+            "question_types": [
+                "conceptual",
+                "practical",
+            ],
+        },
+        {
+            "name": "Machine Learning",
+            "importance": 0.35,
+            "question_count": 2,
+            "difficulty": ["medium", "hard"],
+            "question_types": [
+                "conceptual",
+                "scenario",
+            ],
+        },
+        {
+            "name": "RAG",
+            "importance": 0.40,
+            "question_count": 2,
+            "difficulty": ["medium", "hard"],
+            "question_types": [
+                "conceptual",
+                "scenario",
+            ],
+        },
+    ],
+
+    "easy_percentage": 0.2,
+    "medium_percentage": 0.5,
+    "hard_percentage": 0.3,
+}
 
 
-@router.post(
-    "/interviews/start",
-    response_model=StartInterviewResponse,
-)
+@router.post("/interviews/start")
 def start_interview(
     request: StartInterviewRequest,
 ):
 
-    initial_state = {
-        "candidate_id": request.candidate_id,
-        "role": request.role,
-        "interview_plan": {
-            "total_questions": 6,
-            "competencies": [
-                {
-                    "name": "Python",
-                    "importance": 0.25,
-                    "question_count": 2,
-                    "difficulty": ["easy", "medium"],
-                    "question_types": [
-                        "conceptual",
-                        "practical",
-                    ],
-                },
-                {
-                    "name": "Machine Learning",
-                    "importance": 0.35,
-                    "question_count": 2,
-                    "difficulty": ["medium", "hard"],
-                    "question_types": [
-                        "conceptual",
-                        "scenario",
-                    ],
-                },
-                {
-                    "name": "RAG",
-                    "importance": 0.40,
-                    "question_count": 2,
-                    "difficulty": ["medium", "hard"],
-                    "question_types": [
-                        "conceptual",
-                        "scenario",
-                    ],
-                },
-            ],
-            "easy_percentage": 0.2,
-            "medium_percentage": 0.5,
-            "hard_percentage": 0.3,
-        },
-        "current_question": "",
-        "current_answer": "",
-        "current_competency": "",
-        "current_difficulty": "",
-        "current_expected_concepts": [],
-        "questions_asked": [],
-        "answers": [],
-        "evaluations": [],
-        "next_difficulty": "",
-        "question_number": 1,
-        "interview_complete": False,
-    }
-
-    config = {
-        "configurable": {
-            "thread_id": build_thread_id(
-                request.candidate_id
-            ),
-        }
-    }
-
-    result = interview_graph.invoke(
-        initial_state,
-        config=config,
+    state = interview_service.start_interview(
+        candidate_id=request.candidate_id,
+        role=request.role,
+        interview_plan=DEFAULT_INTERVIEW_PLAN,
     )
 
-    return StartInterviewResponse(
-        candidate_id=result["candidate_id"],
-        role=result["role"],
-        question_number=result["question_number"],
-        question=result["current_question"],
-        competency=result["current_competency"],
-        difficulty=result["current_difficulty"],
-    )
+    return {
+        "candidate_id": state["candidate_id"],
+        "role": state["role"],
+        "question_number": state["question_number"],
+        "question": state["current_question"],
+        "competency": state["current_competency"],
+        "difficulty": state["current_difficulty"],
+        "interview_complete": state["interview_complete"],
+    }
 
 
-@router.post(
-    "/interviews/{candidate_id}/answer",
-    response_model=SubmitAnswerResponse,
-)
+@router.post("/interviews/{candidate_id}/answer")
 def submit_answer(
     candidate_id: str,
     request: SubmitAnswerRequest,
 ):
 
-    if candidate_id != request.candidate_id:
+    state = interview_service.get_interview_state(
+        candidate_id
+    )
+
+    if state is None:
         raise HTTPException(
-            status_code=400,
-            detail="Candidate ID mismatch.",
+            status_code=404,
+            detail="Interview not found.",
         )
 
-    config = {
-        "configurable": {
-            "thread_id": build_thread_id(
-                candidate_id
-            ),
-        }
+    if state.get("interview_complete", False):
+        raise HTTPException(
+            status_code=400,
+            detail="Interview is already complete.",
+        )
+
+    state = interview_service.submit_answer(
+        candidate_id=candidate_id,
+        answer=request.answer,
+    )
+
+    response = {
+        "candidate_id": candidate_id,
+        "question_number": state["question_number"],
+        "evaluation": (
+            state["evaluations"][-1]
+            if state["evaluations"]
+            else None
+        ),
+        "interview_complete": state["interview_complete"],
     }
 
-    result = interview_graph.invoke(
-        {
-            "current_answer": request.answer,
-        },
-        config=config,
+    if not state["interview_complete"]:
+        response["next_question"] = state[
+            "current_question"
+        ]
+
+        response["competency"] = state[
+            "current_competency"
+        ]
+
+        response["difficulty"] = state[
+            "current_difficulty"
+        ]
+
+    return response
+
+
+@router.get("/interviews/{candidate_id}")
+def get_interview(
+    candidate_id: str,
+):
+
+    state = interview_service.get_interview_state(
+        candidate_id
     )
 
-    evaluation = result["evaluations"][-1]
+    if state is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview not found.",
+        )
 
-    return SubmitAnswerResponse(
-        question_number=result["question_number"],
-        score=evaluation["score"],
-        feedback=evaluation["feedback"],
-        current_difficulty=result["current_difficulty"],
-        next_difficulty=result["next_difficulty"],
-        next_question=(
-            None
-            if result["interview_complete"]
-            else result["current_question"]
-        ),
-        interview_complete=result["interview_complete"],
-    )
+    return {
+        "candidate_id": state["candidate_id"],
+        "role": state["role"],
+        "question_number": state["question_number"],
+        "current_question": state["current_question"],
+        "current_competency": state["current_competency"],
+        "current_difficulty": state["current_difficulty"],
+        "interview_complete": state[
+            "interview_complete"
+        ],
+    }
 
 
-@router.get(
-    "/interviews/{candidate_id}/report",
-    response_model=FinalReportResponse,
-)
+@router.get("/interviews/{candidate_id}/report")
 def get_report(
     candidate_id: str,
 ):
 
-    config = {
-        "configurable": {
-            "thread_id": build_thread_id(
-                candidate_id
-            ),
-        }
-    }
+    state = interview_service.get_interview_state(
+        candidate_id
+    )
 
-    try:
-        result = interview_graph.get_state(
-            config
-        ).values
-
-    except Exception as exc:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Interview not found.",
-        ) from exc
-
-    if not result:
+    if state is None:
         raise HTTPException(
             status_code=404,
             detail="Interview not found.",
         )
 
+    if not state.get("interview_complete", False):
+        raise HTTPException(
+            status_code=400,
+            detail="Interview is not yet complete.",
+        )
+
     report = report_service.generate_report(
-        candidate_id=result["candidate_id"],
-        role=result["role"],
-        evaluations=result["evaluations"],
-        interview_plan=result["interview_plan"],
+        candidate_id=state["candidate_id"],
+        role=state["role"],
+        evaluations=state["evaluations"],
+        interview_plan=state["interview_plan"],
     )
 
     return report.model_dump()

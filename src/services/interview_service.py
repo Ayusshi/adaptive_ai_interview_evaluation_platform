@@ -1,124 +1,87 @@
-from src.models.interview import (
-    Competency,
-    InterviewPlan,
-)
+from src.agent.graph import interview_graph
 
 
-class InterviewPlanner:
+class InterviewService:
 
-    def __init__(self, total_questions: int = 15):
-        self.total_questions = total_questions
-
-    def create_plan(
+    def start_interview(
         self,
-        competencies: list[dict],
-    ) -> InterviewPlan:
+        candidate_id: str,
+        role: str,
+        interview_plan: dict,
+    ):
+        thread_id = f"{candidate_id}_interview"
 
-        if not competencies:
-            raise ValueError("At least one competency is required.")
+        initial_state = {
+            "candidate_id": candidate_id,
+            "role": role,
+            "interview_plan": interview_plan,
 
-        competencies = self._normalize_importance(
-            competencies
+            "current_question": "",
+            "current_answer": "",
+            "current_competency": "",
+            "current_difficulty": "",
+            "current_expected_concepts": [],
+
+            "questions_asked": [],
+            "answers": [],
+            "evaluations": [],
+
+            "next_difficulty": "",
+
+            "question_number": 1,
+            "interview_complete": False,
+        }
+
+        config = {
+            "configurable": {
+                "thread_id": thread_id,
+            }
+        }
+
+        state = interview_graph.invoke(
+            initial_state,
+            config=config,
         )
 
-        planned_competencies = self._allocate_questions(
-            competencies
-        )
+        return state
 
-        return InterviewPlan(
-            total_questions=self.total_questions,
-            competencies=planned_competencies,
-            easy_percentage=0.20,
-            medium_percentage=0.50,
-            hard_percentage=0.30,
-        )
-
-    def _normalize_importance(
+    def submit_answer(
         self,
-        competencies: list[dict],
-    ) -> list[dict]:
+        candidate_id: str,
+        answer: str,
+    ):
+        thread_id = f"{candidate_id}_interview"
 
-        total_importance = sum(
-            competency["importance"]
-            for competency in competencies
+        config = {
+            "configurable": {
+                "thread_id": thread_id,
+            }
+        }
+
+        state = interview_graph.invoke(
+            {
+                "current_answer": answer,
+            },
+            config=config,
         )
 
-        if total_importance <= 0:
-            raise ValueError(
-                "Total competency importance must be greater than 0."
-            )
+        return state
 
-        for competency in competencies:
-            competency["importance"] = (
-                competency["importance"]
-                / total_importance
-            )
-
-        return competencies
-
-    def _allocate_questions(
+    def get_interview_state(
         self,
-        competencies: list[dict],
-    ) -> list[Competency]:
+        candidate_id: str,
+    ):
+        thread_id = f"{candidate_id}_interview"
 
-        raw_counts = [
-            competency["importance"] * self.total_questions
-            for competency in competencies
-        ]
+        config = {
+            "configurable": {
+                "thread_id": thread_id,
+            }
+        }
 
-        question_counts = [
-            max(1, int(count))
-            for count in raw_counts
-        ]
+        state = interview_graph.get_state(config)
 
-        current_total = sum(question_counts)
+        if not state.values:
+            return None
 
-        while current_total < self.total_questions:
-
-            largest_index = max(
-                range(len(competencies)),
-                key=lambda i: (
-                    raw_counts[i] - int(raw_counts[i])
-                ),
-            )
-
-            question_counts[largest_index] += 1
-            current_total += 1
-
-        while current_total > self.total_questions:
-
-            largest_index = max(
-                range(len(competencies)),
-                key=lambda i: question_counts[i],
-            )
-
-            if question_counts[largest_index] > 1:
-                question_counts[largest_index] -= 1
-                current_total -= 1
-            else:
-                break
-
-        result = []
-
-        for competency, question_count in zip(
-            competencies,
-            question_counts,
-        ):
-
-            result.append(
-                Competency(
-                    name=competency["name"],
-                    importance=competency["importance"],
-                    question_count=question_count,
-                    difficulty=competency.get(
-                        "difficulty",
-                        ["easy", "medium"],
-                    ),
-                    question_types=competency.get(
-                        "question_types",
-                        ["conceptual", "practical"],
-                    ),
-                )
-            )
-
-        return result
+        return state.values

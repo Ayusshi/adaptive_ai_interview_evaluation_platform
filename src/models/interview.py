@@ -46,3 +46,11 @@ class InterviewQuestion(BaseModel):
 
 class GeneratedQuestions(BaseModel):
     questions: list[InterviewQuestion]
+
+class StartInterviewRequest(BaseModel):
+    candidate_id: str = Field(min_length=1)
+    role: str = Field(min_length=1)
+
+
+class SubmitAnswerRequest(BaseModel):
+    answer: str = Field(min_length=1)
