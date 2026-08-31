@@ -1,28 +1,25 @@
-from pydantic import BaseModel, Field
-
-from src.models.candidate import Candidate
-from src.models.job import Job
-from src.models.interview import (
-    Competency,
-    InterviewStatus,
-    Question,
-)
-from src.models.evaluation import AnswerEvaluation
+from typing import TypedDict
 
 
-class InterviewState(BaseModel):
-    candidate: Candidate
-    job: Job
+class InterviewState(TypedDict):
 
-    competencies: list[Competency] = Field(default_factory=list)
-    interview_plan: list[Question] = Field(default_factory=list)
+    candidate_id: str
+    role: str
 
-    questions_asked: list[str] = Field(default_factory=list)
-    evaluations: list[AnswerEvaluation] = Field(default_factory=list)
+    interview_plan: dict
 
-    current_question: Question | None = None
-    current_answer: str | None = None
+    current_question: str
+    current_answer: str
+    current_expected_concepts: list[str]
 
-    difficulty: int = 1
+    questions_asked: list[str]
+    answers: list[str]
 
-    status: InterviewStatus = InterviewStatus.NOT_STARTED
+    evaluations: list[dict]
+
+    current_competency: str
+    current_difficulty: str
+    next_difficulty: str
+
+    question_number: int
+    interview_complete: bool

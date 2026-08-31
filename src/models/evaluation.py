@@ -1,9 +1,21 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AnswerEvaluation(BaseModel):
-    question_id: str
-    score: float
-    strengths: list[str]
-    weaknesses: list[str]
-    follow_up_required: bool
+    score: int = Field(ge=0, le=10)
+
+    strengths: list[str] = Field(
+        default_factory=list
+    )
+
+    weaknesses: list[str] = Field(
+        default_factory=list
+    )
+
+    missing_concepts: list[str] = Field(
+        default_factory=list
+    )
+
+    feedback: str = Field(min_length=1)
+
+    needs_followup: bool
