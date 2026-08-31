@@ -1,5 +1,7 @@
 import json
 
+from pydantic import ValidationError
+
 from src.models.evaluation import AnswerEvaluation
 from src.prompts.evaluation_prompt import (
     SYSTEM_PROMPT,
@@ -32,33 +34,68 @@ class AnswerEvaluator:
             expected_concepts=expected_concepts,
         )
 
-        response = self.llm.generate(
-            prompt=prompt,
-            system_prompt=SYSTEM_PROMPT,
-            json_mode=True,
-        )
+        full_prompt = f"""
+{SYSTEM_PROMPT}
+
+{prompt}
+"""
+
+        response = self.llm.generate(full_prompt)
 
         try:
-            raw_evaluation = json.loads(response)
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                "LLM returned invalid JSON during answer evaluation."
-            ) from exc
+            parsed_response = json.loads(response)
 
-        # Small robustness improvement:
-        # if the model wraps the object inside "evaluation",
-        # unwrap it.
-        if (
-            isinstance(raw_evaluation, dict)
-            and "evaluation" in raw_evaluation
-        ):
-            raw_evaluation = raw_evaluation["evaluation"]
-
-        try:
-            return AnswerEvaluation.model_validate(
-                raw_evaluation
+            # Normalize nullable list fields
+            parsed_response["strengths"] = (
+                parsed_response.get("strengths") or []
             )
-        except Exception as exc:
+
+            parsed_response["weaknesses"] = (
+                parsed_response.get("weaknesses") or []
+            )
+
+            parsed_response["missing_concepts"] = (
+                parsed_response.get("missing_concepts") or []
+            )
+
+            # Normalize nullable scalar fields
+            parsed_response["feedback"] = (
+                parsed_response.get("feedback") or ""
+            )
+
+            parsed_response["needs_followup"] = bool(
+                parsed_response.get(
+                    "needs_followup",
+                    False,
+                )
+            )
+
+            parsed_response["score"] = int(
+                parsed_response.get(
+                    "score",
+                    0,
+                )
+            )
+
+            return AnswerEvaluation.model_validate(
+                parsed_response
+            )
+
+        except (
+            json.JSONDecodeError,
+            ValidationError,
+            TypeError,
+            ValueError,
+        ) as exc:
+
+            print(
+                "Warning: LLM response could not be validated."
+            )
+
+            print(
+                f"Raw response: {response}"
+            )
+
             raise ValueError(
                 "LLM response does not match the "
                 "answer evaluation schema."

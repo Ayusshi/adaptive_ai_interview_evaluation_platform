@@ -6,6 +6,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from src.agent.state import InterviewState
 
 from src.agent.nodes import (
+    route_entry,
     start_interview,
     ask_question,
     receive_answer,
@@ -61,23 +62,37 @@ builder.add_node(
 
 
 # --------------------------------------------------
-# Main flow
+# Entry routing
+# --------------------------------------------------
+
+builder.add_conditional_edges(
+    START,
+    route_entry,
+    {
+        "start_interview": "start_interview",
+        "submit_answer": "receive_answer",
+    },
+)
+
+
+# --------------------------------------------------
+# Start interview
 # --------------------------------------------------
 
 builder.add_edge(
-    START,
-    "start_interview",
-)
-
-builder.add_edge(
     "start_interview",
     "ask_question",
 )
 
 builder.add_edge(
     "ask_question",
-    "receive_answer",
+    END,
 )
+
+
+# --------------------------------------------------
+# Answer evaluation
+# --------------------------------------------------
 
 builder.add_edge(
     "receive_answer",
@@ -106,22 +121,22 @@ builder.add_conditional_edges(
 
 
 # --------------------------------------------------
-# Continue interview loop
+# Return next question
 # --------------------------------------------------
 
 builder.add_edge(
     "ask_follow_up",
-    "receive_answer",
+    END,
 )
 
 builder.add_edge(
     "ask_next_question",
-    "receive_answer",
+    END,
 )
 
 
 # --------------------------------------------------
-# SQLite Checkpointing
+# SQLite checkpointing
 # --------------------------------------------------
 
 connection = sqlite3.connect(
@@ -135,9 +150,9 @@ checkpointer = SqliteSaver(
 
 
 # --------------------------------------------------
-# Compile graph
+# Compile
 # --------------------------------------------------
 
 interview_graph = builder.compile(
-    checkpointer=checkpointer
+    checkpointer=checkpointer,
 )

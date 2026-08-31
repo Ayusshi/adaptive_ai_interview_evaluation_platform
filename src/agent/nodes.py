@@ -10,6 +10,12 @@ question_selector = QuestionSelector()
 answer_evaluator = AnswerEvaluator(llm)
 adaptive_engine = AdaptiveEngine()
 
+def route_entry(state: InterviewState) -> str:
+
+    if state.get("current_answer"):
+        return "submit_answer"
+
+    return "start_interview"
 
 def start_interview(
     state: InterviewState,
@@ -58,23 +64,14 @@ def ask_question(
 def receive_answer(
     state: InterviewState,
 ):
-    # Temporary simulated candidate answer.
-    # This will eventually come from the API/UI.
-
-    answer = (
-        "RAG retrieves relevant information from an "
-        "external knowledge base and provides it to "
-        "the language model as context."
-    )
+    answer = state["current_answer"]
 
     return {
-        "current_answer": answer,
         "answers": [
             *state["answers"],
             answer,
         ],
     }
-
 
 def evaluate_answer(
     state: InterviewState,
@@ -139,6 +136,10 @@ def route_after_decision(
     state: InterviewState,
 ) -> str:
 
+    # The current question has just been evaluated.
+    # If we have reached the total number of planned
+    # questions, finish the interview.
+
     total_questions = state["interview_plan"]["total_questions"]
 
     if state["question_number"] >= total_questions:
@@ -146,8 +147,29 @@ def route_after_decision(
 
     evaluation = state["evaluations"][-1]
 
+    # A follow-up stays within the current competency.
     if evaluation["needs_followup"]:
-        return "follow_up"
+
+        try:
+
+            question_selector.select_question(
+                competency=state["current_competency"],
+                difficulty=state["current_difficulty"],
+                questions_asked=state["questions_asked"],
+            )
+
+            return "follow_up"
+
+        except ValueError:
+
+            print(
+                "No unused follow-up question available."
+            )
+
+            print(
+                "Continuing with the planned "
+                "next competency."
+            )
 
     return "next_question"
 
@@ -155,29 +177,33 @@ def route_after_decision(
 def ask_follow_up(
     state: InterviewState,
 ):
-    """
-    Ask another question on the current competency.
-
-    Follow-up questions stay within the same competency,
-    while the adaptive engine determines the difficulty.
-    """
-
-    competency = state["current_competency"]
-    difficulty = state["next_difficulty"]
 
     try:
 
         selected_question = question_selector.select_question(
-            competency=competency,
-            difficulty=difficulty,
+            competency=state["current_competency"],
+            difficulty=state["current_difficulty"],
             questions_asked=state["questions_asked"],
         )
+
+        return {
+            "current_question": selected_question["question"],
+            "current_competency": selected_question["competency"],
+            "current_difficulty": selected_question["difficulty"],
+            "current_expected_concepts": selected_question[
+                "expected_concepts"
+            ],
+            "questions_asked": [
+                *state["questions_asked"],
+                selected_question["question"],
+            ],
+            "question_number": state["question_number"] + 1,
+        }
 
     except ValueError:
 
         print(
-            f"No unused {competency} question found "
-            f"at {difficulty} difficulty."
+            "No unused follow-up question available."
         )
 
         print(
@@ -186,59 +212,159 @@ def ask_follow_up(
         )
 
         return {
-            "question_number": (
-                state["question_number"] + 1
-            ),
+            "question_number": state["question_number"],
         }
-
-    return {
-        "current_question": selected_question["question"],
-        "current_competency": selected_question["competency"],
-        "current_difficulty": selected_question["difficulty"],
-        "current_expected_concepts": selected_question[
-            "expected_concepts"
-        ],
-        "questions_asked": [
-            *state["questions_asked"],
-            selected_question["question"],
-        ],
-        "question_number": (
-            state["question_number"] + 1
-        ),
-    }
 
 
 def ask_next_question(
     state: InterviewState,
 ) -> InterviewState:
 
-    competency = get_competency_for_question(state)
+    plan = state["interview_plan"]
+    competencies = plan["competencies"]
 
-    if competency is None:
+    question_number = state["question_number"]
+
+    # --------------------------------------------------
+    # Determine which competency should handle this
+    # question based on the interview plan.
+    #
+    # Example:
+    # Q1-Q2 -> Python
+    # Q3-Q4 -> Machine Learning
+    # Q5-Q6 -> RAG
+    # --------------------------------------------------
+
+    current_position = 0
+    selected_competency = None
+
+    for competency in competencies:
+
+        question_count = competency["question_count"]
+
+        if question_number <= current_position + question_count:
+            selected_competency = competency
+            break
+
+        current_position += question_count
+
+    # Safety check
+    if selected_competency is None:
         return {
             "interview_complete": True,
         }
 
-    question = question_selector.select_question(
-        competency=competency,
-        difficulty=state["next_difficulty"],
-        questions_asked=state["questions_asked"],
+    competency_name = selected_competency["name"]
+    available_difficulties = selected_competency["difficulty"]
+
+    # --------------------------------------------------
+    # Start with the difficulty determined by the
+    # adaptive engine.
+    # --------------------------------------------------
+
+    difficulty = state.get(
+        "next_difficulty",
+        available_difficulties[0],
     )
+
+    # If the adaptive engine selected a difficulty that
+    # isn't available for this competency, use the first
+    # difficulty defined by the competency.
+    if difficulty not in available_difficulties:
+
+        difficulty = available_difficulties[0]
+
+    print(
+        f"Selecting next question: "
+        f"{competency_name} / {difficulty}"
+    )
+
+    # --------------------------------------------------
+    # Try the adaptive difficulty first.
+    # --------------------------------------------------
+
+    question = None
+
+    try:
+
+        question = question_selector.select_question(
+            competency=competency_name,
+            difficulty=difficulty,
+            questions_asked=state["questions_asked"],
+        )
+
+    except ValueError:
+
+        print(
+            f"No unused {competency_name} question "
+            f"found at {difficulty} difficulty."
+        )
+
+    # --------------------------------------------------
+    # If no question exists at the adaptive difficulty,
+    # try the other difficulties for THIS competency.
+    # --------------------------------------------------
+
+    if question is None:
+
+        for fallback_difficulty in available_difficulties:
+
+            if fallback_difficulty == difficulty:
+                continue
+
+            try:
+
+                question = question_selector.select_question(
+                    competency=competency_name,
+                    difficulty=fallback_difficulty,
+                    questions_asked=state["questions_asked"],
+                )
+
+                print(
+                    f"Falling back to "
+                    f"{fallback_difficulty} difficulty."
+                )
+
+                break
+
+            except ValueError:
+                continue
+
+    # --------------------------------------------------
+    # If there are no questions left for this competency,
+    # don't crash the entire interview.
+    #
+    # The interview plan determines the next competency,
+    # so simply mark this question as skipped.
+    # --------------------------------------------------
+
+    if question is None:
+
+        print(
+            f"No unused {competency_name} questions "
+            f"available."
+        )
+
+        return {
+            "question_number": question_number + 1,
+        }
+
+    # --------------------------------------------------
+    # Store the selected question.
+    # --------------------------------------------------
 
     return {
         "current_question": question["question"],
         "current_competency": question["competency"],
+        "current_difficulty": question["difficulty"],
         "current_expected_concepts": question[
             "expected_concepts"
         ],
-        "current_difficulty": question["difficulty"],
         "questions_asked": [
             *state["questions_asked"],
             question["question"],
         ],
-        "question_number": (
-            state["question_number"] + 1
-        ),
+        "question_number": question_number + 1,
     }
 
 def get_competency_for_question(

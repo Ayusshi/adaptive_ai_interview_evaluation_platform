@@ -1,8 +1,8 @@
 from pydantic import BaseModel, Field
 
-
 class AnswerEvaluation(BaseModel):
-    score: int = Field(ge=0, le=10)
+
+    score: int = 0
 
     strengths: list[str] = Field(
         default_factory=list
@@ -16,6 +16,6 @@ class AnswerEvaluation(BaseModel):
         default_factory=list
     )
 
-    feedback: str = Field(min_length=1)
+    feedback: str = ""
 
-    needs_followup: bool
+    needs_followup: bool = False
