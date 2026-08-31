@@ -58,7 +58,7 @@ initial_state = {
 
 config = {
     "configurable": {
-    "thread_id": "candidate_001_interview_005"    
+    "thread_id": "candidate_001_interview_006"    
     }
 }
 

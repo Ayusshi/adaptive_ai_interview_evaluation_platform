@@ -49,13 +49,11 @@ def build_evaluation_prompt(
     question: str,
     candidate_answer: str,
     expected_concepts: list[str],
-) -> str:
+    knowledge_context: str,
+):
 
     return f"""
-Evaluate the following interview answer.
-
-Role:
-{role}
+You are evaluating a candidate for the role of {role}.
 
 Competency:
 {competency}
@@ -66,14 +64,17 @@ Difficulty:
 Question:
 {question}
 
-Expected concepts:
-{expected_concepts}
-
-Candidate answer:
+Candidate Answer:
 {candidate_answer}
 
-Evaluate the candidate based on the question and
-expected concepts.
+Expected Concepts:
+{expected_concepts}
 
-Return the structured evaluation as JSON.
+Reference Knowledge:
+{knowledge_context}
+
+Evaluate the candidate's answer against the question,
+expected concepts, and reference knowledge.
+
+Return ONLY valid JSON.
 """

@@ -1,3 +1,4 @@
+from src.services.retrieval_service import KnowledgeRetriever
 from src.agent.state import InterviewState
 from src.services.evaluation_service import AnswerEvaluator
 from src.services.llm import LocalLLM
@@ -6,8 +7,16 @@ from src.services.adaptive_engine import AdaptiveEngine
 
 
 llm = LocalLLM()
+
 question_selector = QuestionSelector()
-answer_evaluator = AnswerEvaluator(llm)
+
+knowledge_retriever = KnowledgeRetriever()
+
+answer_evaluator = AnswerEvaluator(
+    llm,
+    knowledge_retriever,
+)
+
 adaptive_engine = AdaptiveEngine()
 
 def route_entry(state: InterviewState) -> str:

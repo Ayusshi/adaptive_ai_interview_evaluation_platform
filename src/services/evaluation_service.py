@@ -8,12 +8,18 @@ from src.prompts.evaluation_prompt import (
     build_evaluation_prompt,
 )
 from src.services.llm import LocalLLM
+from src.services.retrieval_service import KnowledgeRetriever
 
 
 class AnswerEvaluator:
 
-    def __init__(self, llm: LocalLLM):
+    def __init__(
+        self,
+        llm: LocalLLM,
+        retriever: KnowledgeRetriever,
+    ):
         self.llm = llm
+        self.retriever = retriever
 
     def evaluate(
         self,
@@ -23,7 +29,12 @@ class AnswerEvaluator:
         question: str,
         candidate_answer: str,
         expected_concepts: list[str],
-    ) -> AnswerEvaluation:
+    ):
+
+        knowledge_context = self.retriever.retrieve(
+            competency=competency,
+            expected_concepts=expected_concepts,
+        )
 
         prompt = build_evaluation_prompt(
             role=role,
@@ -32,6 +43,7 @@ class AnswerEvaluator:
             question=question,
             candidate_answer=candidate_answer,
             expected_concepts=expected_concepts,
+            knowledge_context=knowledge_context,
         )
 
         full_prompt = f"""
