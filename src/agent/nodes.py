@@ -96,10 +96,20 @@ def evaluate_answer(
         ],
     )
 
+    evaluation_data = evaluation.model_dump()
+
+    evaluation_data["competency"] = (
+        state["current_competency"]
+    )
+
+    evaluation_data["difficulty"] = (
+        state["current_difficulty"]
+    )
+
     return {
         "evaluations": [
             *state["evaluations"],
-            evaluation.model_dump(),
+            evaluation_data,
         ],
     }
 

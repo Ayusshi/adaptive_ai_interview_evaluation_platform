@@ -1,4 +1,8 @@
 from src.agent.graph import interview_graph
+from src.services.report_service import ReportService
+
+
+report_service = ReportService()
 
 
 initial_state = {
@@ -58,7 +62,7 @@ initial_state = {
 
 config = {
     "configurable": {
-    "thread_id": "candidate_001_interview_006"    
+        "thread_id": "candidate_001_interview_006",
     }
 }
 
@@ -112,7 +116,18 @@ while not result.get("interview_complete", False):
     )
 
 
+# --------------------------------------------------
+# Generate final report
+# --------------------------------------------------
+
 print("\nInterview completed!")
 
-print("\nFinal State:")
-print(result)
+report = report_service.generate_report(
+    candidate_id=result["candidate_id"],
+    role=result["role"],
+    evaluations=result["evaluations"],
+    interview_plan=result["interview_plan"],
+)
+
+print("\nFinal Evaluation Report:")
+print(report.model_dump())
